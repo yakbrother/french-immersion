@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import Anthropic from '@anthropic-ai/sdk';
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import 'dotenv/config';
 
 const app = express();
@@ -71,6 +72,43 @@ Règles :
   } catch (error) {
     console.error('API error:', error);
     res.status(500).json({ error: 'Failed to connect to Claude API' });
+  }
+});
+
+app.get('/api/tts', async (req, res) => {
+  const text = req.query.text as string;
+
+  if (!text) {
+    res.status(400).json({ error: 'Missing text parameter' });
+    return;
+  }
+
+  try {
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata('fr-FR-VivienneMultilingualNeural', OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+
+    const readable = tts.toStream(text);
+    const chunks: Buffer[] = [];
+
+    readable.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+
+    readable.on('end', () => {
+      const audio = Buffer.concat(chunks);
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Length', audio.length.toString());
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(audio);
+    });
+
+    readable.on('error', (error: Error) => {
+      console.error('TTS stream error:', error);
+      res.status(500).json({ error: 'TTS generation failed' });
+    });
+  } catch (error) {
+    console.error('TTS error:', error);
+    res.status(500).json({ error: 'TTS generation failed' });
   }
 });
 

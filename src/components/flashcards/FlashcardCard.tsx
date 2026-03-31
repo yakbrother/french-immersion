@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import type { VocabWord } from '../../types';
-import { Volume2 } from 'lucide-react';
+import { Volume2, Loader2 } from 'lucide-react';
+import { speakFrench } from '../../lib/tts';
 
 interface FlashcardCardProps {
   word: VocabWord;
@@ -9,12 +10,20 @@ interface FlashcardCardProps {
 
 export function FlashcardCard({ word }: FlashcardCardProps) {
   const [isFlipped, setIsFlipped] = useState(false);
+  const [playingId, setPlayingId] = useState<string | null>(null);
 
-  const speak = (text: string) => {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'fr-FR';
-    utterance.rate = 0.85;
-    speechSynthesis.speak(utterance);
+  const handleSpeak = async (text: string, id: string) => {
+    if (playingId) {
+      return;
+    }
+
+    setPlayingId(id);
+
+    try {
+      await speakFrench(text);
+    } finally {
+      setPlayingId(null);
+    }
   };
 
   return (
@@ -48,12 +57,17 @@ export function FlashcardCard({ word }: FlashcardCardProps) {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              speak(word.french);
+              handleSpeak(word.french, 'front');
             }}
-            className="mt-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+            disabled={playingId !== null}
+            className="mt-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center disabled:opacity-50"
             aria-label="Pronounce word"
           >
-            <Volume2 size={20} className="text-primary-500" />
+            {playingId === 'front' ? (
+              <Loader2 size={20} className="text-primary-500 animate-spin" />
+            ) : (
+              <Volume2 size={20} className="text-primary-500" />
+            )}
           </button>
           <p className="text-sm text-gray-400 dark:text-gray-500 mt-4">
             Tap to reveal
@@ -79,12 +93,17 @@ export function FlashcardCard({ word }: FlashcardCardProps) {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              speak(word.example);
+              handleSpeak(word.example, 'back');
             }}
-            className="mt-4 p-2 rounded-full hover:bg-primary-100 dark:hover:bg-gray-700 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+            disabled={playingId !== null}
+            className="mt-4 p-2 rounded-full hover:bg-primary-100 dark:hover:bg-gray-700 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center disabled:opacity-50"
             aria-label="Pronounce example"
           >
-            <Volume2 size={20} className="text-primary-500" />
+            {playingId === 'back' ? (
+              <Loader2 size={20} className="text-primary-500 animate-spin" />
+            ) : (
+              <Volume2 size={20} className="text-primary-500" />
+            )}
           </button>
           <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
             Tap to flip back
