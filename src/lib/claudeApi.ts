@@ -4,7 +4,8 @@ export async function sendChatMessage(
   messages: ChatMessage[],
   scenario: Scenario,
   mode: 'teacher' | 'immersive',
-  onChunk: (text: string) => void
+  onChunk: (text: string) => void,
+  signal?: AbortSignal
 ): Promise<string> {
   const response = await fetch('/api/chat', {
     method: 'POST',
@@ -17,6 +18,7 @@ export async function sendChatMessage(
       scenario,
       mode,
     }),
+    signal,
   });
 
   if (!response.ok) {
@@ -31,35 +33,44 @@ export async function sendChatMessage(
 
   const decoder = new TextDecoder();
   let fullText = '';
+  let buffer = '';
+  let done = false;
 
-  while (true) {
-    const { done, value } = await reader.read();
+  while (!done) {
+    const { done: streamDone, value } = await reader.read();
 
-    if (done) {
+    if (streamDone) {
       break;
     }
 
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split('\n');
+    buffer += decoder.decode(value, { stream: true });
+
+    // A single SSE line can straddle two reads; parse only complete lines and
+    // carry the trailing partial line over to the next iteration.
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
 
     for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6);
+      if (!line.startsWith('data: ')) {
+        continue;
+      }
 
-        if (data === '[DONE]') {
-          break;
+      const data = line.slice(6);
+
+      if (data === '[DONE]') {
+        done = true;
+        break;
+      }
+
+      try {
+        const parsed = JSON.parse(data);
+
+        if (parsed.text) {
+          fullText += parsed.text;
+          onChunk(fullText);
         }
-
-        try {
-          const parsed = JSON.parse(data);
-
-          if (parsed.text) {
-            fullText += parsed.text;
-            onChunk(fullText);
-          }
-        } catch {
-          // skip malformed chunks
-        }
+      } catch {
+        // skip malformed chunks
       }
     }
   }

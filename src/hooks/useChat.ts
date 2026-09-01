@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useLocalStorage } from './useLocalStorage';
 import { STORAGE_KEYS } from '../lib/storage';
 import type { ChatMessage, ChatSession, Scenario } from '../types';
@@ -14,6 +14,10 @@ export function useChat() {
   const [activeScenario, setActiveScenario] = useState<Scenario | null>(null);
   const [mode, setMode] = useState<'teacher' | 'immersive'>('teacher');
   const [streamingText, setStreamingText] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Abort any in-flight stream when the component using this hook unmounts.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const startSession = useCallback((scenario: Scenario) => {
     setActiveScenario(scenario);
@@ -39,12 +43,16 @@ export function useChat() {
       setIsLoading(true);
       setStreamingText('');
 
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       try {
         const fullText = await sendChatMessage(
           updatedMessages,
           activeScenario,
           mode,
-          (text) => setStreamingText(text)
+          (text) => setStreamingText(text),
+          controller.signal
         );
 
         const assistantMessage: ChatMessage = {
@@ -57,6 +65,10 @@ export function useChat() {
         setMessages((prev) => [...prev, assistantMessage]);
         setStreamingText('');
       } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+
         const errorMessage: ChatMessage = {
           id: crypto.randomUUID(),
           role: 'assistant',
@@ -76,6 +88,8 @@ export function useChat() {
   );
 
   const endSession = useCallback(() => {
+    abortRef.current?.abort();
+
     if (activeScenario && messages.length > 0) {
       const session: ChatSession = {
         id: crypto.randomUUID(),
