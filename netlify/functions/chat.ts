@@ -1,21 +1,38 @@
 import type { Config } from '@netlify/functions';
 import Anthropic from '@anthropic-ai/sdk';
 import { buildSystemPrompt, CLAUDE_MODEL, MAX_TOKENS } from '../../shared/chat';
+import { validateChatRequest } from '../../shared/validation';
+
+const jsonError = (error: string, status: number): Response =>
+  new Response(JSON.stringify({ error }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 
 export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
 
-  const { messages, scenario, mode } = await req.json();
-
-  if (!messages || !scenario || !mode) {
-    return new Response(JSON.stringify({ error: 'Missing required fields' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error('ANTHROPIC_API_KEY is not set');
+    return jsonError('Server misconfiguration', 500);
   }
 
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return jsonError('Invalid JSON body', 400);
+  }
+
+  const validation = validateChatRequest(body);
+
+  if ('error' in validation) {
+    return jsonError(validation.error, 400);
+  }
+
+  const { messages, scenario, mode } = validation.data;
   const systemPrompt = buildSystemPrompt(mode, scenario);
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -29,10 +46,7 @@ export default async (req: Request): Promise<Response> => {
           model: CLAUDE_MODEL,
           max_tokens: MAX_TOKENS,
           system: systemPrompt,
-          messages: messages.map((m: { role: string; content: string }) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          messages,
         });
 
         for await (const chunk of response) {
@@ -46,6 +60,7 @@ export default async (req: Request): Promise<Response> => {
 
         enqueue('data: [DONE]\n\n');
       } catch (err) {
+        console.error('Stream error:', err);
         enqueue(`data: ${JSON.stringify({ error: 'Stream error' })}\n\n`);
       } finally {
         controller.close();
@@ -62,4 +77,7 @@ export default async (req: Request): Promise<Response> => {
   });
 };
 
-export const config: Config = { path: '/api/chat' };
+export const config: Config = {
+  path: '/api/chat',
+  rateLimit: { windowSize: 60, windowLimit: 30, aggregateBy: 'ip' },
+};
