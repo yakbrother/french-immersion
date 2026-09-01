@@ -1,9 +1,14 @@
+const MAX_CACHED_CLIPS = 50;
 const audioCache = new Map<string, string>();
 
 export async function speakFrench(text: string): Promise<void> {
   const cached = audioCache.get(text);
 
   if (cached) {
+    // Refresh recency so the LRU eviction below keeps hot clips.
+    audioCache.delete(text);
+    audioCache.set(text, cached);
+
     return playAudioUrl(cached);
   }
 
@@ -17,6 +22,15 @@ export async function speakFrench(text: string): Promise<void> {
 
     const blob = await response.blob();
     const objectUrl = URL.createObjectURL(blob);
+
+    if (audioCache.size >= MAX_CACHED_CLIPS) {
+      const oldestKey = audioCache.keys().next().value;
+
+      if (oldestKey !== undefined) {
+        URL.revokeObjectURL(audioCache.get(oldestKey)!);
+        audioCache.delete(oldestKey);
+      }
+    }
 
     audioCache.set(text, objectUrl);
 

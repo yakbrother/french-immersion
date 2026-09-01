@@ -52,10 +52,11 @@ export function useProgress() {
     const today = new Date().toISOString().split('T')[0];
 
     setProgress((prev) => {
-      const activity = prev.dailyActivity[today] ?? {
-        cardsReviewed: 0,
-        chatMinutes: 0,
-        grammarCompleted: 0,
+      const existing = prev.dailyActivity[today];
+      const activity = {
+        cardsReviewed: existing?.cardsReviewed ?? 0,
+        chatMinutes: existing?.chatMinutes ?? 0,
+        grammarCompleted: existing?.grammarCompleted ?? 0,
       };
 
       if (type === 'cards') {
