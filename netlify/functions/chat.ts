@@ -1,5 +1,6 @@
 import type { Config } from '@netlify/functions';
 import Anthropic from '@anthropic-ai/sdk';
+import { buildSystemPrompt, CLAUDE_MODEL, MAX_TOKENS } from '../../shared/chat';
 
 export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') {
@@ -15,26 +16,7 @@ export default async (req: Request): Promise<Response> => {
     });
   }
 
-  const systemPrompt =
-    mode === 'teacher'
-      ? `You are a patient French teacher helping a B2-level student practice conversation.
-Scenario: ${scenario.systemPrompt}
-Rules:
-- Speak primarily in French but provide English translations in parentheses for difficult words
-- Gently correct grammar mistakes in the student's French
-- When correcting, explain the rule briefly
-- Keep responses conversational and encouraging, 2-3 sentences max
-- If the student writes in English, respond in French but explain in English
-- Use proper French accents and punctuation`
-      : `Tu es un interlocuteur francophone natif.
-Scénario : ${scenario.systemPrompt}
-Règles :
-- Parle uniquement en français, comme un natif
-- Utilise un vocabulaire de niveau B2
-- Ne traduis jamais en anglais
-- Si l'étudiant fait une erreur, reformule naturellement sans expliquer
-- Réponses courtes et naturelles, 2-3 phrases maximum
-- Utilise les accents et la ponctuation correctement`;
+  const systemPrompt = buildSystemPrompt(mode, scenario);
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -44,8 +26,8 @@ Règles :
 
       try {
         const response = anthropic.messages.stream({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 300,
+          model: CLAUDE_MODEL,
+          max_tokens: MAX_TOKENS,
           system: systemPrompt,
           messages: messages.map((m: { role: string; content: string }) => ({
             role: m.role,

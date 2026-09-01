@@ -1,5 +1,5 @@
 import type { Config } from '@netlify/functions';
-import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import { synthesizeSpeech } from '../../shared/tts';
 
 export default async (req: Request): Promise<Response> => {
   const url = new URL(req.url);
@@ -13,24 +13,9 @@ export default async (req: Request): Promise<Response> => {
   }
 
   try {
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(
-      'fr-FR-VivienneMultilingualNeural',
-      OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3
-    );
+    const audio = await synthesizeSpeech(text);
 
-    const { audioStream } = tts.toStream(text);
-    const chunks: Buffer[] = [];
-
-    await new Promise<void>((resolve, reject) => {
-      audioStream.on('data', (chunk: Buffer) => chunks.push(chunk));
-      audioStream.on('end', resolve);
-      audioStream.on('error', reject);
-    });
-
-    const audio = Buffer.concat(chunks);
-
-    return new Response(audio, {
+    return new Response(new Uint8Array(audio), {
       headers: {
         'Content-Type': 'audio/mpeg',
         'Cache-Control': 'public, max-age=86400',
