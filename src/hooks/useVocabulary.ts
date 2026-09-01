@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useLocalStorage } from './useLocalStorage';
 import { STORAGE_KEYS } from '../lib/storage';
 import type { CardReview, VocabTheme, VocabWord } from '../types';
@@ -26,12 +26,38 @@ export function useVocabulary() {
     return vocabulary.filter((w) => w.theme === selectedTheme);
   }, [selectedTheme]);
 
-  const dueCards = useMemo(
-    () => getDueCards(reviews, filteredWords),
-    [reviews, filteredWords]
+  // Read latest reviews without making the session card list reactive to them:
+  // the due list must be snapshotted once per session, not re-derived (and
+  // re-shuffled) on every grade.
+  const reviewsRef = useRef(reviews);
+  useEffect(() => {
+    reviewsRef.current = reviews;
+  }, [reviews]);
+
+  const [sessionCards, setSessionCards] = useState<VocabWord[]>(() =>
+    getDueCards(reviews, filteredWords)
   );
 
-  const currentCard: VocabWord | null = dueCards[currentIndex] ?? null;
+  const startSession = useCallback(() => {
+    setSessionCards(getDueCards(reviewsRef.current, filteredWords));
+    setCurrentIndex(0);
+    setSessionComplete(false);
+    setSessionStats({ again: 0, hard: 0, easy: 0 });
+  }, [filteredWords]);
+
+  // Start a fresh session when the theme changes. The initial session is built
+  // by the useState initializer above, so skip the first (mount) run.
+  const didMount = useRef(false);
+  useEffect(() => {
+    if (!didMount.current) {
+      didMount.current = true;
+      return;
+    }
+
+    startSession();
+  }, [startSession]);
+
+  const currentCard: VocabWord | null = sessionCards[currentIndex] ?? null;
 
   const grade = useCallback(
     (quality: Grade) => {
@@ -39,7 +65,7 @@ export function useVocabulary() {
         return;
       }
 
-      const existing = reviews[currentCard.id] ?? createInitialReview(currentCard.id);
+      const existing = reviewsRef.current[currentCard.id] ?? createInitialReview(currentCard.id);
       const updated = gradeCard(existing, quality);
 
       setReviews((prev) => ({ ...prev, [currentCard.id]: updated }));
@@ -47,20 +73,18 @@ export function useVocabulary() {
       const statKey = quality === 1 ? 'again' : quality === 3 ? 'hard' : 'easy';
       setSessionStats((prev) => ({ ...prev, [statKey]: prev[statKey] + 1 }));
 
-      if (currentIndex + 1 >= dueCards.length) {
+      if (currentIndex + 1 >= sessionCards.length) {
         setSessionComplete(true);
       } else {
         setCurrentIndex((i) => i + 1);
       }
     },
-    [currentCard, currentIndex, dueCards.length, reviews, setReviews]
+    [currentCard, currentIndex, sessionCards.length, setReviews]
   );
 
   const resetSession = useCallback(() => {
-    setCurrentIndex(0);
-    setSessionComplete(false);
-    setSessionStats({ again: 0, hard: 0, easy: 0 });
-  }, []);
+    startSession();
+  }, [startSession]);
 
   const stats = useMemo(() => {
     const learned = Object.values(reviews).filter((r) => r.repetitions >= 3).length;
@@ -74,7 +98,7 @@ export function useVocabulary() {
   return {
     currentCard,
     currentIndex,
-    totalDue: dueCards.length,
+    totalDue: sessionCards.length,
     sessionComplete,
     sessionStats,
     selectedTheme,
