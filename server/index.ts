@@ -87,14 +87,14 @@ app.get('/api/tts', async (req, res) => {
     const tts = new MsEdgeTTS();
     await tts.setMetadata('fr-FR-VivienneMultilingualNeural', OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
 
-    const readable = tts.toStream(text);
+    const { audioStream } = tts.toStream(text);
     const chunks: Buffer[] = [];
 
-    readable.on('data', (chunk: Buffer) => {
+    audioStream.on('data', (chunk: Buffer) => {
       chunks.push(chunk);
     });
 
-    readable.on('end', () => {
+    audioStream.on('end', () => {
       const audio = Buffer.concat(chunks);
       res.setHeader('Content-Type', 'audio/mpeg');
       res.setHeader('Content-Length', audio.length.toString());
@@ -102,7 +102,7 @@ app.get('/api/tts', async (req, res) => {
       res.send(audio);
     });
 
-    readable.on('error', (error: Error) => {
+    audioStream.on('error', (error: Error) => {
       console.error('TTS stream error:', error);
       res.status(500).json({ error: 'TTS generation failed' });
     });

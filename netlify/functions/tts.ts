@@ -19,13 +19,13 @@ export default async (req: Request): Promise<Response> => {
       OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3
     );
 
-    const readable = tts.toStream(text);
+    const { audioStream } = tts.toStream(text);
     const chunks: Buffer[] = [];
 
     await new Promise<void>((resolve, reject) => {
-      readable.on('data', (chunk: Buffer) => chunks.push(chunk));
-      readable.on('end', resolve);
-      readable.on('error', reject);
+      audioStream.on('data', (chunk: Buffer) => chunks.push(chunk));
+      audioStream.on('end', resolve);
+      audioStream.on('error', reject);
     });
 
     const audio = Buffer.concat(chunks);
